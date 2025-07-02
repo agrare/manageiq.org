@@ -12,15 +12,15 @@ module Miq
     end
 
     def [](path)
-      @index[path.to_s] || []
+      @index[path.to_s] || {}
     end
 
     def paths_for(path)
-      versions.reverse.each.with_index.with_object({}) { |(v, i), h| h[v] = self[path][i] }
+      self[path].slice(*versions.reverse)
     end
 
     def canonical_path_for(path)
-      recent_path = self[path].first
+      recent_path = self[path].values.last
 
       # TODO: This case should not happen, but some docs do not conform to versioned docs (e.g. /api/)
       #       Remove this when all docs conform.
@@ -33,10 +33,10 @@ module Miq
 
     def build_index
       {}.tap do |index|
-        paths.each do |path, prior_path|
-          set = index[prior_path] || []
-          set.unshift(path)
-          index[path] = set
+        paths.each do |path_hash|
+          set = index[path_hash[:prior]] || {}
+          set[path_hash[:version]] = path_hash[:path]
+          index[path_hash[:path]] = set
         end
       end
     end
@@ -58,24 +58,28 @@ module Miq
     end
 
     def paths_in_menu(menu)
+      version = menu_version(menu)
+
       contents = YAML.load_file(menu)
 
       # ref menus have a bonus set of initial keys, so remove those and then recurse
       contents = contents.values
 
-      paths_in_menu_contents(contents).each_slice(2).to_a
+      paths_in_menu_contents(contents, version)
     end
 
-    def paths_in_menu_contents(contents)
+    def paths_in_menu_contents(contents, version)
       return [] if contents.blank?
 
       contents.flat_map do |c|
-        path_pair(c["path"], c["prior"]) + paths_in_menu_contents(c["children"])
+        [path_pair(c["path"], c["prior"], version)].compact + paths_in_menu_contents(c["children"], version)
       end
     end
 
-    def path_pair(path, prior_path)
-      path ? [path, prior_path || prior_path_for(path)] : []
+    def path_pair(path, prior_path, version)
+      return if path.nil?
+
+      {:path => path, :version => version, :prior => prior_path || prior_path_for(path)}
     end
 
     def versions
